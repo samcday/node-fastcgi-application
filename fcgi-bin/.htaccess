@@ -1,0 +1,6 @@
+SetHandler fcgid-script
+Options +ExecCGI
+
+# Customize the next two directives for your requirements.
+Order allow,deny
+Allow from all
