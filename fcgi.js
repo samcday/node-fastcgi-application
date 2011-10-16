@@ -37,12 +37,12 @@ var handleConnection = function(result, server) {
 	
 	fastcgiStream.on("record", function(requestId, record) {
 		var request = requests[requestId];
-			
+
 		if(record instanceof fcgi.records.BeginRequest) {
 			if(request) {
 				closeConnection(socket);
 			}
-			
+
 			requests[requestId] = {
 				req: new http.IncomingMessage(null)
 			};
@@ -50,21 +50,21 @@ var handleConnection = function(result, server) {
 	
 		else if(record instanceof fcgi.records.Params) {
 			record.params.forEach(function(paramPair) {
-				request.req._addHeaderLine(paramPair[0].toLowerCase(), paramPair[1]);
+				request.req._addHeaderLine(paramPair[0].toLowerCase().replace("_", "-"), paramPair[1]);
 			});
 			
 			if(record.params.length == 0) {
 				// Fill in the request object.
-				var httpVersionStr = request.req.headers.server_protocol || "HTTP/1.1";
+				var httpVersionStr = request.req.headers["server-protocol"] || "HTTP/1.1";
 				var httpVersionParts = httpVersionStr.replace(/^HTTP\//, "").split(".");
 				if(httpVersionParts.length != 2) httpVersionParts = [1, 1];
 				request.req.httpVersionMajor = httpVersionParts[0];
 				request.req.httpVersionMinor = httpVersionParts[1];
 				request.req.httpVersion = request.req.httpVersionMajor + "." + request.req.httpVersionMinor;
-	
-				request.req.url = request.req.headers.request_uri;
-				request.req.method = request.req.request_method;
-				
+
+				request.req.url = request.req.headers["request-uri"];
+				request.req.method = request.req.headers["request-method"];
+
 				// Setup http response.
 				request.res = new http.ServerResponse(request.req);
 				
