@@ -1,6 +1,6 @@
-var fcgi = require('fastcgi-stream'),
-    http = require('http'),
-    stream = require('stream');
+var fcgi = require('fastcgi-stream');
+var http = require('http');
+var stream = require('stream');
 
 // FCGI record content must not exceed 65535 bytes of data.
 var FCGI_MAX_CONTENT_LEN = 65535;
@@ -11,12 +11,10 @@ var FCGI_MAX_CONTENT_LEN = 65535;
  * @returns {connectFunction}
  */
 module.exports.handle = function (appCb, errCb) {
-  if (errCb == null) {
-    errCb = function (e) {
-      console.error(e);
-      console.error(e.stack);
-    };
-  }
+  errCb = errCb || function (e) {
+    console.error(e);
+    console.error(e.stack);
+  };
 
   return function connectFunction(socket) {
     // Register an error handler so the process doesn't get killed in case of socket read errors, etc.
@@ -49,7 +47,7 @@ module.exports.handle = function (appCb, errCb) {
           var val = paramPair[1];
 
           if (key && key.length && val && val.length) {
-            if (key.startsWith('http-')) {
+            if (key.indexOf('http-') === 0) {
               // This is a browser header.
               key = key.substr(5);
               request.req._addHeaderLine(key, val, request.req.headers);
