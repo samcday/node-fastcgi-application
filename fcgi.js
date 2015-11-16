@@ -1,154 +1,175 @@
-var fcgi = require("fastcgi-stream"),
-	fs = require("fs"),
-	util = require("util"),
-	net = require("net"),
-	http = require("http"),
-	IOWatcher = process.binding("io_watcher").IOWatcher,
-	
-	netBindings = process.binding("net"),
-	_net_accept = netBindings.accept;
+var fcgi = require('fastcgi-stream'),
+    http = require('http'),
+    stream = require('stream');
 
-var FCGI_LISTENSOCK_FILENO = process.stdin.fd;
+// FCGI record content must not exceed 65535 bytes of data.
+var FCGI_MAX_CONTENT_LEN = 65535;
 
-var activeRequests = 0;
-var shuttingDown = false;
+/**
+ * @param appCb  function to be called with `http.ClientRequest` and `http.ServerResponse` objects
+ * @param errCb  socket error handler
+ * @returns {connectFunction}
+ */
+module.exports.handle = function (appCb, errCb) {
+  if (errCb == null) {
+    errCb = function (e) {
+      console.error(e);
+      console.error(e.stack);
+    };
+  }
 
-var closeConnection = function(socket) {
-	socket.destroy();
-	socket = null;
-	activeRequests--;
+  return function connectFunction(socket) {
+    // Register an error handler so the process doesn't get killed in case of socket read errors, etc.
+    socket.on('error', errCb);
 
-	console.error("closedconn.", activeRequests);
-	if((activeRequests == 0) && shuttingDown) {
-		console.error("All done!");
-		process.exit(-1);
-	}
-}
+    var fastcgiStream = new fcgi.FastCGIStream(socket);
 
-// This is where the magic happens.
-var handleConnection = function(result, server) {
-	var socket = new net.Socket(result.fd);
-	socket.setNoDelay(true);
-	var fastcgiStream = new fcgi.FastCGIStream(socket);
-	
-	activeRequests++;
+    var requests = {};
 
-	var requests = {};
-	
-	fastcgiStream.on("record", function(requestId, record) {
-		var request = requests[requestId];
+    fastcgiStream.on('record', function (requestId, record) {
+      var request = requests[requestId];
 
-		if(record instanceof fcgi.records.BeginRequest) {
-			if(request) {
-				closeConnection(socket);
-			}
+      if (record instanceof fcgi.records.BeginRequest) {
+        if (request) {
+          socket.end();
+        }
 
-			requests[requestId] = {
-				req: new http.IncomingMessage(null)
-			};
-		}
-	
-		else if(record instanceof fcgi.records.Params) {
-			record.params.forEach(function(paramPair) {
-				request.req._addHeaderLine(paramPair[0].toLowerCase().replace("_", "-"), paramPair[1]);
-			});
-			
-			if(record.params.length == 0) {
-				// Fill in the request object.
-				var httpVersionStr = request.req.headers["server-protocol"] || "HTTP/1.1";
-				var httpVersionParts = httpVersionStr.replace(/^HTTP\//, "").split(".");
-				if(httpVersionParts.length != 2) httpVersionParts = [1, 1];
-				request.req.httpVersionMajor = httpVersionParts[0];
-				request.req.httpVersionMinor = httpVersionParts[1];
-				request.req.httpVersion = request.req.httpVersionMajor + "." + request.req.httpVersionMinor;
+        request = requests[requestId] = {
+          req: new http.IncomingMessage(null)
+        };
 
-				request.req.url = request.req.headers["request-uri"];
-				request.req.method = request.req.headers["request-method"];
+        // Express relies on this property being non-null.
+        request.req.connection = {};
 
-				// Setup http response.
-				request.res = new http.ServerResponse(request.req);
-				
-				request.res.assignSocket({
-					writable: true,
-					write: function(data, encoding) {
-						var stdOutRecord = new fcgi.records.StdOut(data);
-						stdOutRecord.encoding = encoding;
-						fastcgiStream.writeRecord(requestId, stdOutRecord);
-					}
-				});
-				
-				// TODO: would be nice to support this, but it's causing weird
-				// shit when sent over the FCGI wire.
-				request.res.useChunkedEncodingByDefault = false;
+        // FastCGI environment variables.
+        request.req.env = {};
+      } else if (record instanceof fcgi.records.Params) {
+        record.params.forEach(function (paramPair) {
+          var key = paramPair[0].toLowerCase().replace(/_/g, '-');
+          var val = paramPair[1];
 
-				// Sorta hacky, we override the _storeHeader implementation of 
-				// OutgoingMessage and blank out the http response header line.
-				// Instead, we parse it out and put it into the Status http header.
-				// TODO: should we check if we're supposed to be sending NPH or 
-				// something? Can we even do that in FCGI?
-				request.res._storeHeader = function(statusLine, headers) {
-					var matches = statusLine.match(/^HTTP\/[0-9]\.[0-9] (.+)/);
-					headers["Status"] = matches[1];
-					http.OutgoingMessage.prototype._storeHeader.apply(this, ["", headers]);
-				};
-				
-				request.res.on("finish", function() {								
-					var end = new fcgi.records.EndRequest(0, fcgi.records.EndRequest.protocolStatus.REQUEST_COMPLETE);
-					fastcgiStream.writeRecord(requestId, end);
+          if (key && key.length && val && val.length) {
+            if (key.startsWith('http-')) {
+              // This is a browser header.
+              key = key.substr(5);
+              request.req._addHeaderLine(key, val, request.req.headers);
+            } else {
+              // This is an FCGI environment property.
+              switch (key) {
+                case 'server-protocol':
+                  var httpVersionParts = val.replace(/^HTTP\//, '').split('.');
+                  if (httpVersionParts.length != 2)
+                    httpVersionParts = [1, 1];
+                  request.req.httpVersionMajor = Number(httpVersionParts[0]);
+                  request.req.httpVersionMinor = Number(httpVersionParts[1]);
+                  request.req.httpVersion = request.req.httpVersionMajor + '.' + request.req.httpVersionMinor;
+                  break;
 
-					closeConnection(socket);
-				});
-				
-				try {
-					server.emit("request", request.req, request.res);
-				}
-				catch(e) {
-					console.error(e);
-					
-					var end = new fcgi.records.EndRequest(-1, fcgi.records.EndRequest.protocolStatus.REQUEST_COMPLETE);
-					fastcgiStream.writeRecord(requestId, end);
-					closeConnection(socket);
-				}
-			}
-		}
+                case 'request-uri':
+                  request.req.url = val;
+                  break;
 
-		else if(record instanceof fcgi.records.StdIn) {
-			if(record.data.length == 0) {
-				// Emit "end" on the IncomingMessage.
-				request.req.emit("end");
-			}
-			else {
-				request.req.emit("data", record.data);
-			}
-		}
-	});
-	
-	// Let the games begin.
-	socket.resume();
-};
+                case 'request-method':
+                  request.req.method = val;
+                  break;
 
-module.exports.handle = function(server) {
-	var initiateShutdown = function() {
-		console.error("Initiating shutdown.");
-		shuttingDown = true;
-		console.error(activeRequests);
-		if(activeRequests == 0) {
-			console.error("Shutting down.");
-			watcher.stop();
-			process.exit(0);
-		}
-	};
+                case 'request-scheme':
+                  request.req.connection.encrypted = (val === 'https');
+                  break;
 
-	var watcher = new IOWatcher();
-	watcher.set(FCGI_LISTENSOCK_FILENO, true, false);
-	
-	watcher.callback = function() {
-		var result = _net_accept(FCGI_LISTENSOCK_FILENO);
-		handleConnection(result, server);
-	};
-	
-	watcher.start();
+                case 'remote-addr':
+                  request.req.connection.remoteAddress = val;
+                  break;
 
-	process.on("SIGUSR1", initiateShutdown);
-	process.on("SIGTERM", initiateShutdown);
+                default:
+                  // Make these available on a special `env` property on the request object.
+                  request.req.env[key] = val;
+                  break;
+              }
+            }
+          }
+        });
+
+        if (record.params.length == 0) {
+          // Setup http response.
+          request.res = new http.ServerResponse(request.req);
+
+          var writable = new stream.Writable({
+            write: function (chunk, encoding, next) {
+              if (!Buffer.isBuffer(chunk)) {
+                chunk = new Buffer(chunk, encoding);
+                encoding = buffer;
+              }
+
+              var currChunk;
+              var record;
+              var consumed = 0;
+              var remaining = chunk.length;
+              do {
+                currChunk = chunk.slice(consumed, consumed + Math.min(remaining, FCGI_MAX_CONTENT_LEN));
+
+                record = new fcgi.records.StdOut(currChunk);
+                record.encoding = encoding;
+                fastcgiStream.writeRecord(requestId, record);
+
+                consumed += FCGI_MAX_CONTENT_LEN;
+                remaining -= FCGI_MAX_CONTENT_LEN;
+              } while (remaining > 0);
+
+              next();
+            }
+          });
+          // When we try to write more data to the 'writable' stream than the highWaterMark,
+          // it will pause the readable stream, so we need to pass on the 'drain' notification.
+          writable.on('drain', function () {
+            request.res.emit('drain');
+          });
+          request.res.assignSocket(writable);
+
+          // TODO: would be nice to support this, but it's causing weird
+          // shit when sent over the FCGI wire.
+          request.res.useChunkedEncodingByDefault = false;
+
+          // Sorta hacky, we override the _storeHeader implementation of
+          // OutgoingMessage and blank out the http response header line.
+          // Instead, we parse it out and put it into the Status http header.
+          // TODO: should we check if we're supposed to be sending NPH or
+          // something? Can we even do that in FCGI?
+          request.res._storeHeader = function (statusLine, headers) {
+            var matches = statusLine.match(/^HTTP\/[0-9]\.[0-9] (.+)/);
+            if (!headers) {
+              headers = {};
+            }
+            headers['Status'] = matches[1];
+            http.OutgoingMessage.prototype._storeHeader.apply(this, ['', headers]);
+          };
+
+          request.res.on('finish', function () {
+            var end = new fcgi.records.EndRequest(0, fcgi.records.EndRequest.protocolStatus.REQUEST_COMPLETE);
+            fastcgiStream.writeRecord(requestId, end);
+
+            socket.end();
+          });
+
+          try {
+            appCb(request.req, request.res);
+          } catch (e) {
+            var end = new fcgi.records.EndRequest(-1, fcgi.records.EndRequest.protocolStatus.REQUEST_COMPLETE);
+            fastcgiStream.writeRecord(requestId, end);
+
+            socket.end();
+
+            throw e;
+          }
+        }
+      } else if (record instanceof fcgi.records.StdIn) {
+        if (record.data.length) {
+          request.req.emit('data', record.data);
+        } else {
+          // Emit 'end' on the IncomingMessage.
+          request.req.emit('end');
+        }
+      }
+    });
+  };
 };
