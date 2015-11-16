@@ -49,6 +49,10 @@ fastcgi.server = (
 
 Then just `touch /path/to/www/nodetest`.
 
+## License
+
+[Apache License 2.0](LICENSE)
+
 [badge-travis-img]: https://img.shields.io/travis/samcday/node-fastcgi-application.svg?style=flat-square
 [badge-travis-url]: https://travis-ci.org/samcday/node-fastcgi-application
 [badge-david-img]: https://img.shields.io/david/samcday/node-fastcgi-application.svg?style=flat-square
