@@ -92,31 +92,32 @@ module.exports.handle = function (appCb, errCb) {
           // Setup http response.
           request.res = new http.ServerResponse(request.req);
 
-          var writable = new stream.Writable({
-            write: function (chunk, encoding, next) {
-              if (!Buffer.isBuffer(chunk)) {
-                chunk = new Buffer(chunk, encoding);
-                encoding = buffer;
-              }
+          var writable = new stream.Writable();
 
-              var currChunk;
-              var record;
-              var consumed = 0;
-              var remaining = chunk.length;
-              do {
-                currChunk = chunk.slice(consumed, consumed + Math.min(remaining, FCGI_MAX_CONTENT_LEN));
-
-                record = new fcgi.records.StdOut(currChunk);
-                record.encoding = encoding;
-                fastcgiStream.writeRecord(requestId, record);
-
-                consumed += FCGI_MAX_CONTENT_LEN;
-                remaining -= FCGI_MAX_CONTENT_LEN;
-              } while (remaining > 0);
-
-              next();
+          writable._write = function (chunk, encoding, next) {
+            if (!Buffer.isBuffer(chunk)) {
+              chunk = new Buffer(chunk, encoding);
+              encoding = buffer;
             }
-          });
+
+            var currChunk;
+            var record;
+            var consumed = 0;
+            var remaining = chunk.length;
+            do {
+              currChunk = chunk.slice(consumed, consumed + Math.min(remaining, FCGI_MAX_CONTENT_LEN));
+
+              record = new fcgi.records.StdOut(currChunk);
+              record.encoding = encoding;
+              fastcgiStream.writeRecord(requestId, record);
+
+              consumed += FCGI_MAX_CONTENT_LEN;
+              remaining -= FCGI_MAX_CONTENT_LEN;
+            } while (remaining > 0);
+
+            next();
+          };
+
           // When we try to write more data to the 'writable' stream than the highWaterMark,
           // it will pause the readable stream, so we need to pass on the 'drain' notification.
           writable.on('drain', function () {
