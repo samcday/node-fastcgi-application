@@ -26,5 +26,5 @@ deploy:
     secure: ggWdz5YIK63cteRxpqvDkwSydI5hOcdKc8zpJMd+Sj4uvl1XMeLzVSwOkfMZxg7f3gTkVdzZczSquNoIiQp/mRRszPS0y/PSWBVxxp77Qkr8CxRCK97VscfvXcbmaCrrxk1FW/uzHLG/dkQ/PJdoiRdrw6m2c/u5EmRAr934irQ=
   on:
     tags: true
-    repo: samcday/node-google-spreadsheets
+    repo: samcday/node-fastcgi-application
     node: '5.0'
