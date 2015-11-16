@@ -23,6 +23,8 @@ server.listen(PORT);
 require("fastcgi-application").handle(server);
 ```
 
+A complete example can be seen in [example.js](example.js).
+
 Your FCGI process manager will need to be able to start up your app directly.
 
 The easiest way to do that is to add a `#!/usr/bin/env node` hashbang to the top of your entrypoint file and make it executable.

@@ -1,6 +1,6 @@
 {
   "name": "fastcgi-application",
-  "version": "0.0.1",
+  "version": "0.0.1-pre",
   "description": "Run node.js under a FCGI process manager.",
   "main": "index.js",
   "directories": {

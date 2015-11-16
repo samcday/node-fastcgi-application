@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-var fcgiApp = require('./index'),
-    http = require('http'),
-    net = require('net');
+var fcgiApp = require('./index');
+var http = require('http');
+var net = require('net');
 
 var app = function (req, res) {
   res.writeHead(200, {'Content-type': 'text/html'});
