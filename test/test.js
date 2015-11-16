@@ -21,7 +21,7 @@ describe('FastCGI application tests', function () {
   });
 
   it('should set headers and environment variables on the request', function (done) {
-    var server = net.createServer(fcgiApp(function (req, res) {
+    var server = fcgiApp.createServer(function (req, res) {
       should(req.env).be.ok();
       req.env.should.have.property('remote-user');
       req.env['remote-user'].should.eql('user-env');
@@ -32,7 +32,7 @@ describe('FastCGI application tests', function () {
 
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end();
-    }));
+    });
     server.listen(SOCK);
 
     var client = net.connect({ path: SOCK }, function () { });
@@ -68,7 +68,7 @@ describe('FastCGI application tests', function () {
   });
 
   it('should set request attributes based on common environment variables', function (done) {
-    var server = net.createServer(fcgiApp(function (req, res) {
+    var server = fcgiApp.createServer(function (req, res) {
       should(req.env).be.ok();
 
       should(req.httpVersionMinor).be.eql(1);
@@ -82,7 +82,7 @@ describe('FastCGI application tests', function () {
 
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end();
-    }));
+    });
     server.listen(SOCK);
 
     var client = net.connect({ path: SOCK }, function () { });

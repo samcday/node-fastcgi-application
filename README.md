@@ -13,14 +13,15 @@ Run your Node.js server under a FastCGI link from a webserver. Useful if you wan
 npm install fastcgi-application --save
 ```
 
-You can integrate this into an existing project by simply changing your listen call to use this library.
+You can integrate this into an existing project by simply changing your `http.createServer` call to use this library.
 
 ```js
 // i.e change this:
+var server = http.createServer(app);
 server.listen(PORT);
 
-// to this
-require("fastcgi-application").handle(server);
+// to this (assuming your FastCGI process manager feeds you requests via stdin)
+var server = require("fastcgi-application").listenStdin(app);
 ```
 
 A complete example can be seen in [example.js](example.js).

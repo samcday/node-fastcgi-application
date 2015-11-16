@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 var fcgiApp = require('./index');
 var http = require('http');
-var net = require('net');
 
 var app = function (req, res) {
   res.writeHead(200, {'Content-type': 'text/html'});
@@ -13,7 +12,10 @@ var app = function (req, res) {
 //myServer.listen(12345);
 
 // You do this:
-var myServer = net.createServer(fcgiApp(app));
-myServer.listen({fd: process.stdin.fd});
+var myServer = fcgiApp.listenStdin(app);
 // OR (depending on webserver configuration)
-//myServer.listen(1666);
+var myServer = fcgiApp.listenPort(app, 1666);
+
+// fcgiApp.listen* methods return a regular net.Server
+// So you can stop it as normal:
+myServer.close();
