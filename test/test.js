@@ -119,4 +119,69 @@ describe('FastCGI application tests', function () {
       }
     });
   });
+
+  it('should handle POST requests', function (done) {
+    var server = fcgiApp.createServer(function (req, res) {
+      should(req.env).be.ok();
+
+      should(req.httpVersionMinor).be.eql(1);
+      should(req.httpVersionMajor).be.eql(1);
+      should(req.httpVersion).be.eql('1.1');
+
+      should(req.url).be.eql('/');
+      should(req.method).be.eql('POST');
+      should(req.connection.encrypted).be.eql(false);
+
+      var body = '';
+      req.on('data', function (data) {
+        body += data;
+      });
+      req.on('end', function () {
+        should(body).be.eql('{"username":"test"}');
+
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end();
+      });
+      req.on('error', function (err) {
+        done(err);
+      });
+    });
+    server.listen(SOCK);
+
+    var client = net.connect({ path: SOCK }, function () { });
+    var fcgiStream = new fastcgi.FastCGIStream(client);
+
+    var requestId = 1;
+    fcgiStream.writeRecord(requestId, new fastcgi.records.BeginRequest(
+      fastcgi.records.BeginRequest.roles.RESPONDER,
+      fastcgi.records.BeginRequest.flags.KEEP_CONN
+    ));
+
+    fcgiStream.writeRecord(requestId, new fastcgi.records.Params([
+      ['SERVER_PROTOCOL', 'HTTP/1.1'],
+      ['REQUEST_URI', '/'],
+      ['REQUEST_METHOD', 'POST'],
+      ['REQUEST_SCHEME', 'http'],
+      ['CONTENT_TYPE', 'application/json'],
+      ['CONTENT_LENGTH', '19']
+    ]));
+    fcgiStream.writeRecord(requestId, new fastcgi.records.Params([]));
+    fcgiStream.writeRecord(requestId, new fastcgi.records.StdIn('{"username":"test"}'));
+    fcgiStream.writeRecord(requestId, new fastcgi.records.StdIn(''));
+    client.end();
+
+    // Consume the response.
+    fcgiStream.on('record', function (requestId, record) {
+      should(requestId).be.eql(1);
+
+      if (requestId !== fastcgi.constants.NULL_REQUEST_ID) {
+        switch (record.TYPE) {
+          case fastcgi.records.EndRequest.TYPE: {
+            server.close(done);
+            break;
+          }
+        }
+      }
+    });
+  });
 });
