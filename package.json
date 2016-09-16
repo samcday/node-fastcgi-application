@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/samcday/node-fastcgi-application#readme",
   "dependencies": {
-    "fastcgi-stream": "^0.1.3"
+    "fastcgi-stream": "^1.0.0"
   },
   "devDependencies": {
     "istanbul": "^0.4.0",
