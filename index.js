@@ -35,8 +35,10 @@ function createHandler(appCb, errCb) {
           socket.end();
         }
 
+        var incomingStream = new stream.PassThrough();
+
         request = requests[requestId] = {
-          req: new http.IncomingMessage(null)
+          req: new http.IncomingMessage(incomingStream)
         };
 
         // Express relies on this property being non-null.
@@ -81,6 +83,12 @@ function createHandler(appCb, errCb) {
                 case 'remote-addr':
                   request.req.connection.remoteAddress = val;
                   break;
+
+                case 'content-length':
+                case 'content-type':
+                  // These are CGI headers that need to be present in the HTTP request.
+                  // No break here - we want these to be present on the `env` property too.
+                  request.req._addHeaderLine(key, val, request.req.headers);
 
                 default:
                   // Make these available on a special `env` property on the request object.
